@@ -1,10 +1,5 @@
 __pycache__/
-*.pyc
-# Card Kingdom price list and goldfish state, made at run time
 ck.json
 gf.json
-*.json
-# Deck files and playtest output, made per session
-third-*.txt
+*.txt
 playtest-log.md
-.env

@@ -36,11 +36,11 @@ Read every file in `knowledge/` first. They are the rules you judge the deck by.
    Why this step exists: a Witherbloom rebuild skipped "what must stay" and cut the owner's two-mana draw creatures, mana elves and a token spell from their tagged package; each had to be put back one message at a time. Before cutting, re-read the original list's tags and say which package each cut belongs to.
 2. **Get real data. Never trust memory for card text, legality, or price.**
    - `curl -sSL -A "Mozilla/5.0" -o ck.json https://api.cardkingdom.com/api/v2/pricelist` (about 70 MB, run once per session in the working directory)
-   - `python3 scripts/mtg.py text deck.txt` prints oracle text, mana value, colour identity (`id:`), Commander legality, game-changer flag
-   - `python3 scripts/mtg.py price deck.txt` prints cheapest price per card and the total
-   - `python3 scripts/mtg.py check deck.txt 'Commander Name'` fails on wrong card count, off-colour cards, banned cards, or duplicates
-   - `python3 scripts/mtg.py search '<scryfall query>' 60 deck.txt` finds candidates with prices, sorted by EDHREC rank; the optional deck file marks each hit `have` or `MISSING`
-   - `python3 scripts/mtg.py edhrec '<Commander Name>' deck.txt` lists EDHREC's cards for that commander by synergy with prices, and marks each one `have` or `MISSING` against the deck file
+   - `python3 ~/.claude/skills/mtg-deck-building/scripts/mtg.py text deck.txt` prints oracle text, mana value, colour identity (`id:`), Commander legality, game-changer flag
+   - `python3 ~/.claude/skills/mtg-deck-building/scripts/mtg.py price deck.txt` prints cheapest price per card and the total
+   - `python3 ~/.claude/skills/mtg-deck-building/scripts/mtg.py check deck.txt 'Commander Name'` fails on wrong card count, off-colour cards, banned cards, or duplicates
+   - `python3 ~/.claude/skills/mtg-deck-building/scripts/mtg.py search '<scryfall query>' 60 deck.txt` finds candidates with prices, sorted by EDHREC rank; the optional deck file marks each hit `have` or `MISSING`
+   - `python3 ~/.claude/skills/mtg-deck-building/scripts/mtg.py edhrec '<Commander Name>' deck.txt` lists EDHREC's cards for that commander by synergy with prices, and marks each one `have` or `MISSING` against the deck file
    - `scripts/` is inside this skill's directory; call it by absolute path from the working directory that holds `ck.json`. Deck files are `1 Card Name` per line.
 3. **Write the game plan in three lines** before touching a card: how the deck wins, what the ideal turns 1 to 4 look like, which turn it needs each piece by.
 4. **Pattern pass. Never build a candidate pool from memory.** Do all four before choosing a single card:
