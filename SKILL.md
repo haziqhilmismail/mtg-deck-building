@@ -40,7 +40,7 @@ Read every file in `knowledge/` first. They are the rules you judge the deck by.
    - `python3 ~/.claude/skills/mtg-deck-building/scripts/mtg.py price deck.txt` prints cheapest price per card and the total
    - `python3 ~/.claude/skills/mtg-deck-building/scripts/mtg.py check deck.txt 'Commander Name'` fails on wrong card count, off-colour cards, banned cards, or duplicates
    - `python3 ~/.claude/skills/mtg-deck-building/scripts/mtg.py search '<scryfall query>' 60 deck.txt` finds candidates with prices, sorted by EDHREC rank; the optional deck file marks each hit `have` or `MISSING`
-   - `python3 ~/.claude/skills/mtg-deck-building/scripts/mtg.py edhrec '<Commander Name>' deck.txt` lists EDHREC's cards for that commander by synergy with prices, and marks each one `have` or `MISSING` against the deck file
+   - `python3 ~/.claude/skills/mtg-deck-building/scripts/mtg.py edhrec '<Commander Name>' deck.txt` lists EDHREC's cards for that commander by synergy with prices, and marks each one `have` or `MISSING` against the deck file. For partners, join the names with ` + `
    - `scripts/` is inside this skill's directory; call it by absolute path from the working directory that holds `ck.json`. Deck files are `1 Card Name` per line.
 3. **Write the game plan in three lines** before touching a card: how the deck wins, what the ideal turns 1 to 4 look like, which turn it needs each piece by.
 4. **Pattern pass. Never build a candidate pool from memory.** Do all four before choosing a single card:
@@ -74,7 +74,7 @@ When the user gives a new video or article:
 
 Use after building a list, or when the user asks to playtest. `scripts/goldfish.py` shuffles with a real random seed and keeps the library order in `gf.json`. **Never read `gf.json`, and never choose a seed after seeing a hand.** Only use cards the script has printed.
 
-1. `goldfish.py new deck.txt 'Commander Name'` deals seven. Decide keep or mulligan and say why (lands, a play for turns 1 to 3, a route to the commander). `mull` reshuffles; the first is free, then `put bottom` one card per extra mulligan.
+1. `python3 ~/.claude/skills/mtg-deck-building/scripts/goldfish.py new deck.txt 'Commander Name'` deals seven. Decide keep or mulligan and say why (lands, a play for turns 1 to 3, a route to the commander). `mull` reshuffles; the first is free, then `put bottom` one card per extra mulligan.
 2. Play the number of turns the target bracket's game lasts (see `knowledge/2026-04-24-build-backwards-end-in-mind.md`), and ask for the bracket if it is not stated:
 
    | Bracket | Turns to play |
@@ -90,13 +90,13 @@ Use after building a list, or when the user asks to playtest. `scripts/goldfish.
 6. Play at least 3 games with different seeds before judging, and report per game: the seed, mulligans, lands by turn 5, the turn the commander came down, dead cards in hand, and damage or board on the last turn played. Say whether the deck could have won by the bracket's last turn. Then list what the games suggest changing.
 7. Append every game to `playtest-log.md` beside the deck file (seed, mulligans, commander turn, opponents' life after each of the last two turns, win turn, one-line note), and read that log before judging so results from earlier sessions count. When the user asks for a win turn, play one turn past it and report wins by each turn out of the total.
 8. Sequencing rules learned in play: cast impulse-draw spells (Jeska's Will, Light Up the Stage, Expressive Iteration) before the land drop; play tapped lands on the turns you have nothing to cast; only target your own spell with Pact of Negation when it wins that turn.
-9. **Opponent interaction (use when the user wants a realistic test, and always for bracket 3 and up once the solo games are done).** `goldfish.py react` rolls whether the table answers; never decide this yourself and never re-roll.
+9. **Opponent interaction (use when the user wants a realistic test, and always for bracket 3 and up once the solo games are done).** `python3 ~/.claude/skills/mtg-deck-building/scripts/goldfish.py react` rolls whether the table answers; never decide this yourself and never re-roll.
    - Every spell that matters: `react counter`. A countered spell goes to the graveyard, its mana is spent, and it still counts for storm and cast triggers.
    - Every engine permanent when it resolves, and the commander at the start of each of your turns while it is out: `react removal`. A removed commander returns to the command zone and costs {2} more.
    - Add `key` when the play is game-changing: the commander's engine piece (for example Curiosity landing on Ghyrson), a tutor fetching the win, the combo piece itself, or the commander once its engine is attached.
    - Add `storm` when you are visibly going off: from the third spell in one turn, or when lethal is on the stack.
    - Add `ward=N` for a target with ward {N}; removal odds are halved per {2} of ward. Hexproof or a held protection spell you can pay for: skip the roll and spend the protection instead when the roll says ANSWERED.
-   - Defaults per roll: counter 5%, removal 8%, +10% for `key`, +15% for `storm`, 6 answers shared by the whole table per game (when they run out, nothing more is answered). Change them with `goldfish.py odds name=value` to match the pod, and report the odds used.
+   - Defaults per roll: counter 5%, removal 8%, +10% for `key`, +15% for `storm`, 6 answers shared by the whole table per game (when they run out, nothing more is answered). Change them with `python3 ~/.claude/skills/mtg-deck-building/scripts/goldfish.py odds name=value` to match the pod, and report the odds used.
    - Your own counterspells answer an ANSWERED roll: cast one (pay its cost) and the original play goes through.
    - Report solo and with-interaction results separately.
 10. State the limits every time: solo games have no opponents, so no removal, counterspells, blockers, or opposing triggers; `react` games add counterspells and spot removal by odds only, with no board wipes, blockers, or opposing clocks. Give opponent-dependent cards zero value unless the user sets an assumption (for example "each opponent casts one spell of mana value 3 or less per turn").
@@ -106,8 +106,8 @@ Use after building a list, or when the user asks to playtest. `scripts/goldfish.
 Run this before full-deck goldfishing when reviewing or building a list.
 
 1. Tag all 99 non-commander cards with one role each in a file: `1 Card Name # role`. Use the deck's own roles (for example land, engine, payoff, mana, advantage, cantrip, tutor, counter, removal, protection, wipe, finisher). Within a role, list cards cheapest first so each third gets a mix.
-2. `goldfish.py split tagged.txt` writes `third-A.txt`, `third-B.txt`, `third-C.txt` and prints the role table. Report every flag: `UNEVEN` means one third is short of that role; `ONE-OFFS` means fewer than three, so at least one third has none.
-3. Goldfish each third once for 5 turns, each in its own directory: `goldfish.py new ../third-A.txt ''`. The commander is still castable from the command zone.
+2. `python3 ~/.claude/skills/mtg-deck-building/scripts/goldfish.py split tagged.txt` writes `third-A.txt`, `third-B.txt`, `third-C.txt` and prints the role table. Report every flag: `UNEVEN` means one third is short of that role; `ONE-OFFS` means fewer than three, so at least one third has none.
+3. Goldfish each third once for 5 turns, each in its own directory: `python3 ~/.claude/skills/mtg-deck-building/scripts/goldfish.py new ../third-A.txt ''`. The commander is still castable from the command zone.
 4. Compare the three games. A third that cannot function shows which role is thin. Fix the counts, not the single card.
 
 Limits found in use:

@@ -1,5 +1,6 @@
 """Honest goldfish dealer. The library order lives in gf.json and is never printed;
-only cards that are drawn or legitimately looked at are shown.
+only cards that are drawn or legitimately looked at are shown. Each command prints the seed so a game can be
+replayed; the seed plus the deck file rebuild the order, so never compute it.
   goldfish.py split <tagged deckfile>               99 cards tagged `1 Card Name # role` -> third-A/B/C.txt, flags uneven roles
   goldfish.py new <deckfile> '<Commander>' [seed]   shuffle, draw 7 (seed is random unless given; '' if the file has no commander)
   goldfish.py mull                                  reshuffle, draw 7 (London: then `put bottom` N cards)
@@ -15,6 +16,7 @@ only cards that are drawn or legitimately looked at are shown.
   goldfish.py odds [name=value ...]                 show or change this game's odds (counter removal key storm ward answers)
 """
 import json, random, re, sys
+from mtg import parse
 F = "gf.json"
 # shortcut: one shared pool of `answers` for the whole table and no board wipes; split per opponent if that matters
 ODDS = {"counter": 0.05, "removal": 0.08, "key": 0.10, "storm": 0.15, "ward": 0.5, "answers": 6}
@@ -44,7 +46,7 @@ if cmd == "split":
     print("sizes", [len(t) for t in thirds], "-> third-A.txt third-B.txt third-C.txt")
 elif cmd == "new":
     seed = a[2] if len(a) > 2 else str(random.SystemRandom().randrange(10**9))
-    lib = [n for l in open(a[0]) if (m := re.match(r"\s*(\d+)x?\s+(.+?)\s*$", l)) for n in [m.group(2)] * int(m.group(1))]
+    lib = [n for q, name in parse(a[0]) for n in [name] * q]
     if len(a) > 1 and a[1]: lib.pop(find(lib, a[1]))
     random.Random(seed).shuffle(lib)
     s = {"seed": seed, "lib": lib, "drawn": 7, "mulls": 0}

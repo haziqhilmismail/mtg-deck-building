@@ -4,11 +4,12 @@
   mtg.py search '<query>' [limit] [deckfile]  Scryfall search (EDHREC order) with CK prices; with a deckfile, marks each hit have/MISSING
   mtg.py check  <deckfile> '<Commander Name>'   100 cards, singleton, legality, colour identity
   mtg.py edhrec '<Commander Name>' [deckfile]   EDHREC's cards for that commander by synergy, with CK prices; marks cards MISSING from the deck
+                                                 partners: 'Tymna the Weaver + Thrasios, Triton Hero'
 ck.json: curl -sSL -A "Mozilla/5.0" -o ck.json https://api.cardkingdom.com/api/v2/pricelist
 """
 import json, re, sys, time, unicodedata, urllib.error, urllib.parse, urllib.request
 from collections import Counter
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 BAD = ("World Championship", "Collectors", "30th Anniversary Edition", "Art Series", "Oversize", "Token", "Memorabilia")
 OWNED_BASICS = {"Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes"}
@@ -32,7 +33,17 @@ class Price(NamedTuple):
     edition: str
     in_stock: bool
 
-def price(name):
+def front(name): return name.split(" // ")[0].lower()
+
+def owned(path): return {front(n) for _, n in parse(path)}
+
+def mark(name, have, sep=""): return "" if have is None else ("have    " if front(name) in have else "MISSING ") + sep
+
+def slug(name):
+    ascii_name = unicodedata.normalize("NFKD", name.split(" // ")[0]).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9 -]", "", ascii_name).strip().replace(" ", "-")
+
+def price(name) -> Optional["Price"]:
     """CK lists double-faced cards by front face."""
     rows = ck().get(name.lower()) or ck().get(name.split(" // ")[0].lower()) or []
     if not rows: return None
@@ -78,46 +89,44 @@ if __name__ == "__main__":
         for c in scry([n for _, n in parse(arg)]): print(line(c) + "\n")
     elif cmd == "check":
         deck = parse(arg); cards = {c["name"]: c for c in scry([n for _, n in deck])}
-        cmdr = next((c for n, c in cards.items() if n.split(" // ")[0].lower() == sys.argv[3].split(" // ")[0].lower()), None)
+        cmdr = next((c for n, c in cards.items() if front(n) == front(sys.argv[3])), None)
         if not cmdr: sys.exit(f"commander '{sys.argv[3]}' is not in {arg}")
         copies = Counter()
-        for q, name in deck: copies[name.split(" // ")[0].lower()] += q
+        for q, name in deck: copies[front(name)] += q
         allowed, bad = set(cmdr["color_identity"]), []
         total = sum(q for q, _ in deck)
         if total != 100: bad.append(f"{total} cards, need 100")
         for q, name in deck:
-            c = next((c for n, c in cards.items() if n.split(" // ")[0].lower() == name.split(" // ")[0].lower()), None)
+            c = next((c for n, c in cards.items() if front(n) == front(name)), None)
             if not c: bad.append(f"{name}: not found"); continue
             off = set(c["color_identity"]) - allowed  # hybrid and rules-text mana symbols count
             if off: bad.append(f"{name}: colour identity {''.join(c['color_identity'])} is outside {''.join(sorted(allowed)) or 'C'}")
             if c["legalities"]["commander"] != "legal": bad.append(f"{name}: {c['legalities']['commander']} in Commander")
-            n = copies.pop(name.split(" // ")[0].lower(), 1)  # pop so a card listed on two lines is reported once
+            n = copies.pop(front(name), 1)  # pop so a card listed on two lines is reported once
             if n > 1 and "Basic" not in c["type_line"] and not re.search(r"A deck can have (any number|up to)", c.get("oracle_text", "")):
                 bad.append(f"{name}: {n} copies")
         print("\n".join(bad) if bad else f"OK: 100 cards, all legal, all inside {''.join(sorted(allowed)) or 'C'}")
         sys.exit(1 if bad else 0)
     elif cmd == "search":
         limit, n = int(sys.argv[3]) if len(sys.argv) > 3 else 60, 0
-        have = {x.split(" // ")[0].lower() for _, x in parse(sys.argv[4])} if len(sys.argv) > 4 else None
+        have = owned(sys.argv[4]) if len(sys.argv) > 4 else None
         url = "https://api.scryfall.com/cards/search?" + urllib.parse.urlencode({"q": arg, "order": "edhrec"})
         while url and n < limit:
             d = get(url)
             for c in d["data"][:limit - n]:
                 n += 1; p = price(c["name"])
-                mark = "" if have is None else "have    | " if c["name"].split(" // ")[0].lower() in have else "MISSING | "
-                print(f"{mark}${p.price if p else '?'} | {line(c)[:380]}")
+                print(f"{mark(c['name'], have, '| ')}${p.price if p else '?'} | {line(c)[:380]}")
             url = d.get("next_page")
     elif cmd == "edhrec":
-        # shortcut: partner pairs load only the first commander's page; build EDHREC's pair slug if partners matter
-        ascii_name = unicodedata.normalize("NFKD", arg.split(" // ")[0]).encode("ascii", "ignore").decode().lower()
-        slug = re.sub(r"[^a-z0-9 -]", "", ascii_name).replace(" ", "-")
-        have = {n.split(" // ")[0].lower() for _, n in parse(sys.argv[3])} if len(sys.argv) > 3 else None
+        have = owned(sys.argv[3]) if len(sys.argv) > 3 else None
+        page = "-".join(slug(n) for n in arg.split(" + "))
         cards = {}
-        for cl in get(f"https://json.edhrec.com/pages/commanders/{slug}.json")["container"]["json_dict"]["cardlists"]:
+        d = get(f"https://json.edhrec.com/pages/commanders/{page}.json")
+        if "redirect" in d: d = get(f"https://json.edhrec.com/pages{d['redirect']}.json")  # partner pairs have one canonical order
+        for cl in d["container"]["json_dict"]["cardlists"]:
             for cv in cl["cardviews"]: cards.setdefault(cv["name"], cv)
         for name, cv in sorted(cards.items(), key=lambda kv: -kv[1].get("synergy", 0)):
             if name in OWNED_BASICS: continue
             p = price(name)
-            mark = "" if have is None else "have    " if name.split(" // ")[0].lower() in have else "MISSING "
-            print(f"{mark}syn {cv.get('synergy', 0):+.2f}  in {100 * cv['num_decks'] // max(cv['potential_decks'], 1):3d}%  ${p.price if p else '?'}  {name}")
+            print(f"{mark(name, have)}syn {cv.get('synergy', 0):+.2f}  in {100 * cv['num_decks'] // max(cv['potential_decks'], 1):3d}%  ${p.price if p else '?'}  {name}")
     else: sys.exit(__doc__)
