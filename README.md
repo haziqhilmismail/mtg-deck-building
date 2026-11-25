@@ -49,3 +49,7 @@ logo.svg              Logo
 ## Knowledge sources
 
 The files in `knowledge/` are short summaries in my own words of public videos by Based Deck Department and The Trinket Mage. Each file links to its source video.
+
+## License
+
+MIT. See `LICENSE`.
