@@ -1,0 +1,108 @@
+"""Usage (run where ck.json lives):
+  mtg.py price  <deckfile>         CK cheapest in-stock legal printing per card + total
+  mtg.py text   <deckfile>         Scryfall oracle text, MV, Commander legality, game-changer flag
+  mtg.py search '<query>' [limit] [deckfile]  Scryfall search (EDHREC order) with CK prices; with a deckfile, marks each hit have/MISSING
+  mtg.py check  <deckfile> '<Commander Name>'   100 cards, singleton, legality, colour identity
+  mtg.py edhrec '<Commander Name>' [deckfile]   EDHREC's cards for that commander by synergy, with CK prices; marks cards MISSING from the deck
+ck.json: curl -sSL -A "Mozilla/5.0" -o ck.json https://api.cardkingdom.com/api/v2/pricelist
+"""
+import json, re, sys, time, urllib.parse, urllib.request
+
+BAD = ("World Championship", "Collectors", "30th Anniversary Edition", "Art Series", "Oversize", "Token", "Memorabilia")
+BASICS = {"Plains", "Island", "Swamp", "Mountain", "Forest", "Wastes"}  # assumed owned, priced 0
+HEADERS = {"User-Agent": "deckcheck/1.0", "Accept": "application/json", "Content-Type": "application/json"}
+
+def parse(path):
+    return [(int(m.group(1)), m.group(2)) for l in open(path) if (m := re.match(r"\s*(\d+)\s+(.+?)\s*$", l))]
+
+_ck = None
+def ck():
+    global _ck
+    if _ck is None:
+        _ck = {}
+        for x in json.load(open("ck.json"))["data"]:
+            if not any(b in x["edition"] for b in BAD):
+                _ck.setdefault(x["name"].lower(), []).append(x)
+    return _ck
+
+def price(name):
+    """(price, edition, in_stock) or None. CK lists double-faced cards by front face."""
+    rows = ck().get(name.lower()) or ck().get(name.split(" // ")[0].lower()) or []
+    if not rows: return None
+    stock = [r for r in rows if r["qty_retail"] > 0]
+    r = min(stock or rows, key=lambda r: float(r["price_retail"]))
+    return float(r["price_retail"]), r["edition"] + (" foil" if r["is_foil"] == "true" else ""), bool(stock)
+
+def get(url, body=None):
+    time.sleep(0.2)  # Scryfall rate limit
+    return json.load(urllib.request.urlopen(urllib.request.Request(url, body, HEADERS)))
+
+def scry(names):
+    cards = []
+    for i in range(0, len(names), 75):
+        d = get("https://api.scryfall.com/cards/collection",
+                json.dumps({"identifiers": [{"name": n.split(" // ")[0]} for n in names[i:i+75]]}).encode())
+        cards += d["data"]
+        for nf in d.get("not_found", []): print("NOT FOUND", nf)
+    return cards
+
+def text(c):
+    return " // ".join(f"{f.get('mana_cost','')} {f.get('type_line','')}: {f.get('oracle_text','')}"
+                       for f in c.get("card_faces") or [c]).replace("\n", " | ")
+
+def line(c):
+    return f"{c['name']} | MV{int(c['cmc'])} | id:{''.join(c['color_identity']) or 'C'} | cmdr:{c['legalities']['commander']} | GC:{c.get('game_changer')} | {text(c)}"
+
+if __name__ == "__main__":
+    cmd, arg = sys.argv[1], sys.argv[2]
+    if cmd == "price":
+        tot = n = 0
+        for q, name in parse(arg):
+            n += q
+            if name in BASICS: continue
+            p = price(name)
+            if not p: print(f"  ??.??  {name}  (NOT ON CK)"); continue
+            tot += q * p[0]
+            print(f"{p[0]:7.2f}  {name}  [{p[1]}]{'' if p[2] else '  OUT OF STOCK'}")
+        print(f"TOTAL {tot:.2f}  cards {n}")
+    elif cmd == "text":
+        for c in scry([n for _, n in parse(arg)]): print(line(c) + "\n")
+    elif cmd == "check":
+        deck = parse(arg); cards = {c["name"]: c for c in scry([n for _, n in deck])}
+        cmdr = next(c for n, c in cards.items() if n.split(" // ")[0].lower() == sys.argv[3].split(" // ")[0].lower())
+        allowed, bad = set(cmdr["color_identity"]), []
+        total = sum(q for q, _ in deck)
+        if total != 100: bad.append(f"{total} cards, need 100")
+        for q, name in deck:
+            c = next((c for n, c in cards.items() if n.split(" // ")[0].lower() == name.split(" // ")[0].lower()), None)
+            if not c: bad.append(f"{name}: not found"); continue
+            off = set(c["color_identity"]) - allowed  # hybrid and rules-text mana symbols count
+            if off: bad.append(f"{name}: colour identity {''.join(c['color_identity'])} is outside {''.join(sorted(allowed)) or 'C'}")
+            if c["legalities"]["commander"] != "legal": bad.append(f"{name}: {c['legalities']['commander']} in Commander")
+            if q > 1 and "Basic" not in c["type_line"] and "A deck can have any number" not in c.get("oracle_text", ""):
+                bad.append(f"{name}: {q} copies")
+        print("\n".join(bad) if bad else f"OK: 100 cards, all legal, all inside {''.join(sorted(allowed)) or 'C'}")
+        sys.exit(1 if bad else 0)
+    elif cmd == "search":
+        limit, n = int(sys.argv[3]) if len(sys.argv) > 3 else 60, 0
+        have = {x.split(" // ")[0].lower() for _, x in parse(sys.argv[4])} if len(sys.argv) > 4 else None
+        url = "https://api.scryfall.com/cards/search?" + urllib.parse.urlencode({"q": arg, "order": "edhrec"})
+        while url and n < limit:
+            d = get(url)
+            for c in d["data"][:limit - n]:
+                n += 1; p = price(c["name"])
+                mark = "" if have is None else "have    | " if c["name"].split(" // ")[0].lower() in have else "MISSING | "
+                print(f"{mark}${p[0] if p else '?'} | {line(c)[:380]}")
+            url = d.get("next_page")
+    elif cmd == "edhrec":
+        # ponytail: slug is ASCII-only and single-commander; partners and accented names need EDHREC's own slug
+        slug = re.sub(r"[^a-z0-9 -]", "", arg.split(" // ")[0].lower()).replace(" ", "-")
+        have = {n.split(" // ")[0].lower() for _, n in parse(sys.argv[3])} if len(sys.argv) > 3 else None
+        cards = {}
+        for cl in get(f"https://json.edhrec.com/pages/commanders/{slug}.json")["container"]["json_dict"]["cardlists"]:
+            for cv in cl["cardviews"]: cards.setdefault(cv["name"], cv)
+        for name, cv in sorted(cards.items(), key=lambda kv: -kv[1].get("synergy", 0)):
+            if name in BASICS: continue
+            p = price(name)
+            mark = "" if have is None else "have    " if name.split(" // ")[0].lower() in have else "MISSING "
+            print(f"{mark}syn {cv.get('synergy', 0):+.2f}  in {100 * cv['num_decks'] // max(cv['potential_decks'], 1):3d}%  ${p[0] if p else '?'}  {name}")
